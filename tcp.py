@@ -30,13 +30,12 @@ class Servidor:
             return
 
         payload = segment[4 * (flags >> 12) :]
-        id_conexao = (src_addr, src_port, dst_addr, dst_port, seq_no, ack_no)
+        id_conexao = (src_addr, src_port, dst_addr, dst_port)
 
         if (flags & FLAGS_SYN) == FLAGS_SYN:
             # A flag SYN estar setada significa que é um cliente tentando estabelecer uma conexão nova
             # TODO: talvez você precise passar mais coisas para o construtor de conexão
-            conexao = self.conexoes[id_conexao] = Conexao(self, id_conexao, seq_no, ack_no)
-    
+            conexao = self.conexoes[id_conexao] = Conexao(self, id_conexao, seq_no + 1, ack_no)
 
             header = make_header(dst_port, src_port, seq_no, seq_no + 1, FLAGS_ACK + FLAGS_SYN)
             header = fix_checksum(header, src_addr, dst_addr)
@@ -48,6 +47,7 @@ class Servidor:
             # fazer aqui mesmo ou dentro da classe Conexao.
             if self.callback:
                 self.callback(conexao)
+
         elif id_conexao in self.conexoes:
             # Passa para a conexão adequada se ela já estiver estabelecida
             self.conexoes[id_conexao]._rdt_rcv(seq_no, ack_no, flags, payload)
@@ -61,7 +61,7 @@ class Servidor:
 class Conexao:
     def __init__(self, servidor, id_conexao, seq_no, ack_no):
         self.servidor = servidor
-        self.id_conexao = id_conexao
+        self.id_conexao = id_conexao #(src_addr, src_port, dst_addr, dst_port)
         self.callback = None
         self.seq_no = seq_no
         self.ack_no = ack_no
@@ -76,10 +76,26 @@ class Conexao:
         print("Este é um exemplo de como fazer um timer")
 
     def _rdt_rcv(self, seq_no, ack_no, flags, payload):
+        if (self.seq_no == seq_no):
+            self.callback(self, payload)
+            header = make_header(
+                self.id_conexao[3], 
+                self.id_conexao[1], 
+                seq_no, 
+                seq_no + len(payload),
+                FLAGS_ACK
+            )
+            header = fix_checksum(header, self.id_conexao[2], self.id_conexao[0])
+            self.servidor.rede.enviar(header, self.id_conexao[1])
+
+            self.seq_no += len(payload)
+
         # TODO: trate aqui o recebimento de segmentos provenientes da camada de rede.
         # Chame self.callback(self, dados) para passar dados para a camada de aplicação após
         # garantir que eles não sejam duplicados e que tenham sido recebidos em ordem.
-        print("recebido payload: %r" % payload)
+        # print("recebido payload: %r" % payload)
+
+        #self.servidor.rede.enviar(self, seq_no + payload.length, ack_no, flags, '')
 
     # Os métodos abaixo fazem parte da API
 
